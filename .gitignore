@@ -1,0 +1,8 @@
+# Venv
+env/
+
+# Virtual environment variables
+.env
+
+# Challenge
+challenge.md
