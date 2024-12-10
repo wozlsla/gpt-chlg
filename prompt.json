@@ -1,0 +1,20 @@
+{
+  "_type": "few_shot",
+  "examples": [
+    {
+      "question": "Tell me about the movie *Inception*.",
+      "answer": "**Director:** Christopher Nolan\n**Main Cast:** Leonardo DiCaprio, Joseph Gordon-Levitt, Ellen Page, Tom Hardy\n**Budget:** $160 million\n**Box Office Revenue:** $836.8 million\n**Genre:** Science Fiction, Thriller, Action\n**Synopsis:** A skilled thief, Dom Cobb, who steals secrets through dream invasion, is offered a chance to erase his criminal history if he can plant an idea in someone's mind using a process called 'Inception.'"
+    },
+    {
+      "question": "What can you tell me about *Parasite*?",
+      "answer": "**Director:** Bong Joon-ho\n**Main Cast:** Song Kang-ho, Lee Sun-kyun, Cho Yeo-jeong, Choi Woo-shik, Park So-dam\n**Budget:** $11 million\n**Box Office Revenue:** $263 million\n**Genre:** Thriller, Drama, Dark Comedy\n**Synopsis:** The story follows the Kim family, who scheme to become employed by a wealthy family, the Parks, by infiltrating their household through deception, leading to unexpected and tragic consequences."
+    }
+  ],
+  "example_prompt": {
+    "_type": "prompt",
+    "input_variables": ["question", "answer"],
+    "template": "Human: {question}\nAI: {answer}"
+  },
+  "suffix": "Human: Tell me about the movie {movie}",
+  "input_variables": ["movie"]
+}

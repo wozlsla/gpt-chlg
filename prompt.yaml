@@ -1,0 +1,3 @@
+_type: "prompt"
+template: "Tell me about the movie {movie}"
+input_variables: ["movie"]
