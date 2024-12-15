@@ -6,3 +6,7 @@ env/
 
 # Challenge
 challenge.md
+
+# tmp
+tmp/
+.cache/
