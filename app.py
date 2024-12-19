@@ -54,12 +54,14 @@ def embed_file(file):
     file_content = file.read()
 
     # cache files
-    file_path = f"./.cache/files/{file.name}"
+    # file_path = f"./.cache/files/{file.name}"
+    file_path = f"./cache/files/{file.name}"
     with open(file_path, "wb") as f:
         f.write(file_content)
 
     # for cache embeddings
-    cache_dir = LocalFileStore(f"./.cache/embeddings/{file.name}")
+    # cache_dir = LocalFileStore(f"./.cache/embeddings/{file.name}")
+    cache_dir = LocalFileStore(f"./cache/embeddings/{file.name}")
 
     loader = UnstructuredFileLoader(file_path)
 
