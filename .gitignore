@@ -10,3 +10,6 @@ challenge.md
 # tmp
 tmp/
 .cache/
+
+# Secret streamlit
+.streamlit/
