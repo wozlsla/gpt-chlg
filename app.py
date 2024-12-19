@@ -18,12 +18,6 @@ st.set_page_config(
 )
 
 
-if "memory" not in st.session_state:
-    st.session_state["memory"] = ConversationBufferMemory(return_messages=True)
-
-memory = st.session_state["memory"]
-
-
 # callback : listen events
 class ChatCallbackHandler(BaseCallbackHandler):
 
@@ -33,7 +27,7 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message_box = st.empty()
 
     def on_llm_end(self, *args, **kwargs):
-        save_message(message, "ai")
+        save_message(self.message, "ai")
 
     def on_llm_new_token(self, token, *args, **kwargs):
         self.message += token  # f"{self.mseeage}{token}"
@@ -144,6 +138,7 @@ with st.sidebar:
 
 if file:
     retriever = embed_file(file)
+    memory = st.session_state["memory"]
 
     send_message("Go.", "ai", save=False)
     paint_history()
@@ -164,13 +159,14 @@ if file:
             result = chain.invoke(message)
 
         memory.save_context({"input": message}, {"output": result.content})
+        # memory.load_memory_variables({})["history"]
 
         # docs = retriever.invoke(message)
         # docs = "\n\n".join(document.page_content for document in docs)
         # p = prompt.from_messages(context=docs, question=message)
         # llm.predict_message(p)
 
-        memory.load_memory_variables({})["history"]
 
 else:
     st.session_state["messages"] = []  # Init
+    st.session_state["memory"] = ConversationBufferMemory(return_messages=True)
