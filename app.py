@@ -1,172 +1,209 @@
-import streamlit as st
-
-from langchain.storage import LocalFileStore
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.document_loaders import UnstructuredFileLoader
-from langchain.embeddings import OpenAIEmbeddings, CacheBackedEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from unittest import result
+from langchain.document_loaders import SitemapLoader
+from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores.faiss import FAISS
+from langchain.embeddings import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
-from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
-from langchain.callbacks.base import BaseCallbackHandler
-from langchain.memory import ConversationBufferMemory
+from langchain.prompts import ChatPromptTemplate
+from langchain.callbacks import StreamingStdOutCallbackHandler
+import streamlit as st
 
 
 st.set_page_config(
-    page_title="jimmny-assign",
-    page_icon="./.streamlit/ham.ico",
+    page_title="SiteGPT",
+    page_icon="🖥️",
 )
 
 
-# callback : listen events
-class ChatCallbackHandler(BaseCallbackHandler):
+answer_prompt = ChatPromptTemplate.from_template(
+    """
+    Using ONLY the following context answer the user's question. If you can't just say you don't know, don't make anything up.
+                                                  
+    Then, give a score to the answer between 0 and 5.
 
-    message = ""
+    If the answer answers the user question the score should be high, else it should be low.
 
-    def on_llm_start(self, *args, **kwargs):
-        self.message_box = st.empty()
+    Make sure to always include the answer's score even if it's 0.
 
-    def on_llm_end(self, *args, **kwargs):
-        save_message(self.message, "ai")
+    Context: {context}
+                                                  
+    Examples:
+                                                  
+    Question: How far away is the moon?
+    Answer: The moon is 384,400 km away.
+    Score: 5
+                                                  
+    Question: How far away is the sun?
+    Answer: I don't know
+    Score: 0
+                                                  
+    Your turn!
 
-    def on_llm_new_token(self, token, *args, **kwargs):
-        self.message += token  # f"{self.mseeage}{token}"
-        self.message_box.markdown(self.message)
-
-
-llm = ChatOpenAI(
-    temperature=0.1,
-    streaming=True,
-    callbacks=[
-        ChatCallbackHandler(),
-    ],
+    Question: {question}
+    """
 )
 
 
-@st.cache_data(show_spinner="Ebedding files...")
-def embed_file(file):
-    file_content = file.read()
-
-    # cache files
-    # file_path = f"./.cache/files/{file.name}"
-    file_path = f"./cache/files/{file.name}"
-    with open(file_path, "wb") as f:
-        f.write(file_content)
-
-    # for cache embeddings
-    # cache_dir = LocalFileStore(f"./.cache/embeddings/{file.name}")
-    cache_dir = LocalFileStore(f"./cache/embeddings/{file.name}")
-
-    loader = UnstructuredFileLoader(file_path)
-
-    splitter = CharacterTextSplitter.from_tiktoken_encoder(
-        separator="\n",
-        chunk_size=600,
-        chunk_overlap=100,
-    )
-
-    docs = loader.load_and_split(text_splitter=splitter)
-
-    embeddings = OpenAIEmbeddings()
-    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
-
-    vectorstore = FAISS.from_documents(docs, cached_embeddings)
-    retriever = vectorstore.as_retriever()
-
-    return retriever
-
-
-def save_message(message, role):
-    st.session_state["messages"].append({"message": message, "role": role})
+def get_answers(inputs):
+    docs = inputs["docs"]
+    question = inputs["question"]
+    answer_chain = answer_prompt | llm
+    # a = {
+    #     "question": question,
+    #     "answer": [
+    #         {
+    #             "answer": answer_chain.invoke(
+    #                 {"question": question, "context": doc.page_content}
+    #             ).content,
+    #             "source": doc.metadata["source"],
+    #             "date": doc.metadata["lastmod"],
+    #         }
+    #         for doc in docs
+    #     ],
+    # }
+    # st.write(a["answer"])
+    return {
+        "question": question,
+        "answer": [
+            {
+                "answer": answer_chain.invoke(
+                    {"question": question, "context": doc.page_content}
+                ).content,
+                "source": doc.metadata["source"],
+                "date": doc.metadata["lastmod"],
+            }
+            for doc in docs
+        ],
+    }
 
 
-def send_message(message, role, save=True):
-    with st.chat_message(role):
-        st.markdown(message)
-    if save:
-        save_message(message, role)
-
-
-def paint_history():
-    for message in st.session_state["messages"]:
-        send_message(message["message"], message["role"], save=False)
-
-
-def format_docs(docs):
-    return "\n\n".join(document.page_content for document in docs)
-
-
-def load_memory(_):
-    return memory.load_memory_variables({})["history"]
-
-
-prompt = ChatPromptTemplate.from_messages(
+choose_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
             """
-            Answer the question using ONLY the following context.
-            If you don't know the answer, just say you don't know. DON'T make anything up.
+            Use ONLY the following pre-existing answers to answer the user's question.
 
-            Context: {context}
+            Use the 'Answer' to answers that have the highest 'Score' (more helpful) and favor the most recent ones.
+
+            Cite sources and return the sources of the answers as they are, do not change them.
+
+            Answers: {answers}
             """,
         ),
-        MessagesPlaceholder(variable_name="history"),
         ("human", "{question}"),
     ]
 )
 
 
-st.title("Assignment")
+def choose_answer(inputs):
+    answers = inputs["answer"]
+    question = inputs["question"]
+    choose_chain = choose_prompt | llm
+    condensed = "\n\n".join(
+        f"{answer['answer']}\nSource:{answer['source']}\nDate:{answer['date']}\n"
+        for answer in answers
+    )
+    # st.write(condensed)
+    return choose_chain.invoke(
+        {
+            "question": question,
+            "answers": condensed,
+        }
+    )
+
+
+def parse_page(soup):
+    # print(soup)
+    header = soup.find("header")
+    footer = soup.find("footer")
+    if header:
+        header.decompose()
+    if footer:
+        footer.decompose()
+    # return soup.get_text()
+    return (
+        str(soup.get_text())
+        .replace("\n", " ")
+        .replace("\xa0", " ")
+        # .replace("CloseSearch Submit Blog", "")
+    )
+
+
+@st.cache_data(show_spinner="Loading website...")
+def load_website(url):
+    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=1000,
+        chunk_overlap=200,
+    )
+    loader = SitemapLoader(
+        url,
+        # filter_urls=[r"^(?!.*\/blog\/).*"],
+        filter_urls=[
+            r"(.*\/ai-gateway\/).*",
+            r"(.*\/vectorize\/).*",
+            r"(.*\/workers-ai\/).*",
+        ],
+        parsing_function=parse_page,
+    )
+    loader.requests_per_second = 2
+    docs = loader.load_and_split(text_splitter=splitter)
+    # st.write(docs)
+    vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
+    return vector_store.as_retriever()
+
 
 st.markdown(
     """
-    This is 'DocumentGPT'
-
-    First, upload your file on the sidebar.
-    """
+    # SiteGPT
+            
+    Ask questions about the content of a website.
+            
+    Start by writing the URL of the website on the sidebar.
+"""
 )
 
 
 with st.sidebar:
-    # File uploader
-    file = st.file_uploader(
-        "Upload a .txt or .pdf file",
-        type=["txt", "pdf"],
+    openai_api_key = st.text_input("Input your OpenAI API Key")
+    if not openai_api_key:
+        st.error("Please input your OpenAI API Key on the sidebar")
+
+    llm = ChatOpenAI(
+        temperature=0.1,
+        openai_api_key=openai_api_key,
+        streaming=True,
+        callbacks=[
+            StreamingStdOutCallbackHandler(),
+        ],
     )
 
+    url = st.text_input(
+        "Write down a URL",
+        placeholder="https://exapmle.com",
+    )
 
-if file:
-    retriever = embed_file(file)
-    memory = st.session_state["memory"]
+    st.markdown("---")
+    st.write("Github: https://github.com/wozlsla/gpt-chlg")
 
-    send_message("Go.", "ai", save=False)
-    paint_history()
-    message = st.chat_input("Ask anything")
+if url:
+    if ".xml" not in url:
+        with st.sidebar:
+            st.error("Please write down a Sitemap URL.")
+    else:
+        retriever = load_website(url)
+        query = st.text_input("Ask a question to the website.")
 
-    if message:
-        send_message(message, "human")
-        chain = (
-            {
-                "context": retriever | RunnableLambda(format_docs),
-                "question": RunnablePassthrough(),
-                "history": load_memory,
-            }
-            | prompt
-            | llm
-        )
-        with st.chat_message("ai"):
-            result = chain.invoke(message)
+        if query:
+            chain = (
+                {
+                    "docs": retriever,
+                    "question": RunnablePassthrough(),
+                }
+                | RunnableLambda(get_answers)
+                | RunnableLambda(choose_answer)
+            )
 
-        memory.save_context({"input": message}, {"output": result.content})
-        # memory.load_memory_variables({})["history"]
-
-        # docs = retriever.invoke(message)
-        # docs = "\n\n".join(document.page_content for document in docs)
-        # p = prompt.from_messages(context=docs, question=message)
-        # llm.predict_message(p)
-
-
-else:
-    st.session_state["messages"] = []  # Init
-    st.session_state["memory"] = ConversationBufferMemory(return_messages=True)
+            result = chain.invoke(query)
+            st.markdown(result.content)
